@@ -9,6 +9,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp App/Info.plist "$APP/Contents/Info.plist"
+cp App/AppIcon.icns "$APP/Contents/Resources/"
 cp -R Webview "$APP/Contents/Resources/"
 
 clang -fobjc-arc -Os -Wall -mmacosx-version-min=11.0 \

@@ -18,6 +18,9 @@ open "build/Grid Clock.app"
 | `esc` or `cmd-Q` | quit |
 | `up` / `down` | brightness, 5-100% in steps of 5, remembered between launches |
 
+The icon is the clock rendering itself, frozen at ten past ten - `App/make_icon.m`
+regenerates `App/AppIcon.png` from the same page the app displays.
+
 Drag `build/Grid Clock.app` to `/Applications` to keep it. Only Xcode's command line
 tools are needed - `make_app.sh` is a plain `clang` invocation.
 
