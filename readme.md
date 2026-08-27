@@ -15,8 +15,8 @@ Then pick **Grid Clock** in System Settings > Screen Saver > Other.
 
 Prebuilt `.saver` from upstream: [0.0.5](https://github.com/chrstphrknwtn/grid-clock-screensaver/releases/download/0.0.5/Grid.Clock.0.0.5.saver.zip) (does not run on modern macOS).
 
-## Fork notes
-This fork updates the 2018 original to run on current macOS (tested on macOS 26.6.2 Tahoe, Xcode 26.6, Apple Silicon):
+## macOS 26 notes
+Brought up to date for current macOS (tested on macOS 26.6.2 Tahoe, Xcode 26.6, Apple Silicon):
 
 - Replaced the removed legacy `WebView` with `WKWebView`, loading the bundled page via `-loadFileURL:allowingReadAccessToURL:`.
 - Fixed the configure sheet: the nib is now loaded from the saver's own bundle (`+[NSBundle loadNibNamed:owner:]` looked in the host app), and the sheet is dismissed via `-[NSWindow endSheet:]` instead of the long-removed `NSApplication` equivalent.
