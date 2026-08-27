@@ -1,124 +1,169 @@
 #import "GridClock.h"
-#import <WebKit/WebKit.h>
+
+static NSString * const kModuleName = @"com.chrstphrknwtn.grid-clock";
+static NSString * const kScreenDisplayOptionKey = @"screenDisplayOption";
+
+typedef NS_ENUM(NSInteger, GridClockScreenDisplayOption) {
+    GridClockScreenDisplayPrimary = 0,
+    GridClockScreenDisplayMain = 1,
+    GridClockScreenDisplayAll = 2
+};
+
+@interface GridClock ()
+@property (nonatomic, strong) WKWebView *webView;
+@end
 
 @implementation GridClock
 
-static NSString * const gridClockModule = @"com.chrstphrknwtn.grid-clock";
++ (ScreenSaverDefaults *)defaults {
+    return [ScreenSaverDefaults defaultsForModuleWithName:kModuleName];
+}
 
-- (id)initWithFrame:(NSRect)frame isPreview:(BOOL)isPreview {
+- (instancetype)initWithFrame:(NSRect)frame isPreview:(BOOL)isPreview {
     if (!(self = [super initWithFrame:frame isPreview:isPreview])) return nil;
-    
-    // Preference Defaults
-    ScreenSaverDefaults *defaults;
-    defaults = [ScreenSaverDefaults defaultsForModuleWithName:gridClockModule];
-    
-    [defaults registerDefaults:[NSDictionary dictionaryWithObjectsAndKeys:
-        @"0", @"screenDisplayOption", // Default to show only on primary display
-        nil]];
-    
-    // Webview
-    NSURL* indexHTMLDocumentURL = [NSURL URLWithString:[[[NSURL fileURLWithPath:[[NSBundle bundleForClass:self.class].resourcePath stringByAppendingString:@"/Webview/index.html"] isDirectory:NO] description] stringByAppendingFormat:@"?screensaver=1%@", self.isPreview ? @"&is_preview=1" : @""]];
 
-    WebView* webView = [[WebView alloc] initWithFrame:NSMakeRect(0, 0, frame.size.width, frame.size.height)];
-    webView.drawsBackground = NO; // Avoids a "white flash" just before the index.html file has loaded
-    [webView.mainFrame loadRequest:[NSURLRequest requestWithURL:indexHTMLDocumentURL cachePolicy:NSURLRequestUseProtocolCachePolicy timeoutInterval:30.0]];
-    
-    // Show on screens based on preferences
-    NSArray* screens = [NSScreen screens];
-    NSScreen* primaryScreen = [screens objectAtIndex:0];
-    
-    switch ([defaults integerForKey:@"screenDisplayOption"]) {
-        // Primary screen (System Preferences > Displays).
-        // The screen the menubar is shown on under 'arrangement'
-        case 0:
-            if ((primaryScreen.frame.origin.x == frame.origin.x) || isPreview) {
-                [self addSubview:webView];
-            }
-            break;
-        // Last Focussed Screen
-        // This _sometimes_ results in nothing being shown when previewing in system prefs.
-        case 1:
-            if (([NSScreen mainScreen].frame.origin.x == frame.origin.x) || isPreview) {
-                [self addSubview:webView];
-            }
-            break;
-        // All Screens
-        case 2:
-            [self addSubview:webView];
-            break;
-        default:
-            [self addSubview:webView];
-            break;
-    }
+    [[GridClock defaults] registerDefaults:@{
+        kScreenDisplayOptionKey: @(GridClockScreenDisplayPrimary)
+    }];
+
+    // Black backing avoids a white flash before index.html paints.
+    self.wantsLayer = YES;
+    self.layer.backgroundColor = NSColor.blackColor.CGColor;
+
+    self.animationTimeInterval = 1.0 / 30.0;
+
+    [self addSubview:self.webView];
 
     return self;
 }
 
+- (WKWebView *)webView {
+    if (_webView) return _webView;
+
+    WKWebViewConfiguration *configuration = [[WKWebViewConfiguration alloc] init];
+    configuration.suppressesIncrementalRendering = YES;
+
+    _webView = [[WKWebView alloc] initWithFrame:self.bounds configuration:configuration];
+    _webView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    _webView.navigationDelegate = self;
+    _webView.hidden = YES; // Revealed in -viewDidMoveToWindow once the screen is known.
+    if (@available(macOS 12.0, *)) {
+        _webView.underPageBackgroundColor = NSColor.blackColor;
+    }
+
+    NSURL *indexURL = [[NSBundle bundleForClass:self.class] URLForResource:@"index"
+                                                             withExtension:@"html"
+                                                              subdirectory:@"Webview"];
+    if (indexURL) {
+        [_webView loadFileURL:indexURL allowingReadAccessToURL:indexURL.URLByDeletingLastPathComponent];
+    } else {
+        NSLog(@"GridClock: Webview/index.html missing from bundle resources");
+    }
+
+    return _webView;
+}
+
+#pragma mark - Screen selection
+
+// macOS runs one screen saver instance per display, so the display choice has to be
+// resolved from the window's own screen rather than by comparing frame origins.
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    if (self.window) {
+        self.webView.hidden = !self.shouldDisplayOnCurrentScreen;
+    }
+}
+
+- (BOOL)shouldDisplayOnCurrentScreen {
+    if (self.isPreview) return YES;
+
+    NSScreen *screen = self.window.screen;
+    if (!screen) return YES;
+
+    switch ([[GridClock defaults] integerForKey:kScreenDisplayOptionKey]) {
+        case GridClockScreenDisplayPrimary:
+            // The screen the menu bar lives on (System Settings > Displays > Arrangement).
+            return [screen isEqual:NSScreen.screens.firstObject];
+        case GridClockScreenDisplayMain:
+            return [screen isEqual:NSScreen.mainScreen];
+        case GridClockScreenDisplayAll:
+        default:
+            return YES;
+    }
+}
+
 #pragma mark - ScreenSaverView
 
-- (void)animateOneFrame { [self stopAnimation]; }
+// The clock ticks itself from JavaScript; nothing to draw per frame.
+- (void)animateOneFrame {}
 
-#pragma mark - Config
-// http://cocoadevcentral.com/articles/000088.php
+#pragma mark - Configure sheet
 
 - (BOOL)hasConfigureSheet { return YES; }
 
-- (NSWindow *)configureSheet
-{
-    ScreenSaverDefaults *defaults;
-    defaults = [ScreenSaverDefaults defaultsForModuleWithName:gridClockModule];
-    
-    if (!configSheet)
-    {
-        if (![NSBundle loadNibNamed:@"ConfigureSheet" owner:self])
-        {
-            NSLog( @"Failed to load configure sheet." );
+- (NSWindow *)configureSheet {
+    if (!_configSheet) {
+        // +[NSBundle loadNibNamed:owner:] looks in the *host app* bundle, which for a
+        // screen saver is System Settings, not the .saver. Load from our own bundle.
+        NSBundle *bundle = [NSBundle bundleForClass:self.class];
+        if (![bundle loadNibNamed:@"ConfigureSheet" owner:self topLevelObjects:nil]) {
+            NSLog(@"GridClock: failed to load ConfigureSheet.xib");
+            return nil;
         }
     }
-    
-    [screenDisplayOption selectItemAtIndex:[defaults integerForKey:@"screenDisplayOption"]];
 
-    return configSheet;
+    [self.screenDisplayOption selectItemAtIndex:[[GridClock defaults] integerForKey:kScreenDisplayOptionKey]];
+
+    return _configSheet;
 }
 
-- (IBAction)cancelClick:(id)sender
-{
-    [[NSApplication sharedApplication] endSheet:configSheet];
+- (IBAction)cancelClick:(id)sender {
+    [self closeConfigureSheet];
 }
 
-- (IBAction) okClick: (id)sender
-{
-    ScreenSaverDefaults *defaults;
-    defaults = [ScreenSaverDefaults defaultsForModuleWithName:gridClockModule];
-    
-    // Update our defaults
-    [defaults setInteger:[screenDisplayOption indexOfSelectedItem]
-               forKey:@"screenDisplayOption"];
-    
-    // Save the settings to disk
+- (IBAction)okClick:(id)sender {
+    ScreenSaverDefaults *defaults = [GridClock defaults];
+    [defaults setInteger:self.screenDisplayOption.indexOfSelectedItem forKey:kScreenDisplayOptionKey];
     [defaults synchronize];
-    
-    // Close the sheet
-    [[NSApplication sharedApplication] endSheet:configSheet];
+
+    self.webView.hidden = !self.shouldDisplayOnCurrentScreen;
+
+    [self closeConfigureSheet];
 }
 
-#pragma mark - WebFrameLoadDelegate
-
-- (void)webView:(WebView *)sender didFailLoadWithError:(NSError *)error forFrame:(WebFrame *)frame {
-    NSLog(@"%@ error=%@", NSStringFromSelector(_cmd), error);
+- (void)closeConfigureSheet {
+    NSWindow *parent = _configSheet.sheetParent;
+    if (parent) {
+        [parent endSheet:_configSheet];
+    } else {
+        [_configSheet close];
+    }
 }
 
-#pragma mark Focus Overrides
+#pragma mark - WKNavigationDelegate
 
-- (NSView *)hitTest:(NSPoint)aPoint {return self;}
-//- (void)keyDown:(NSEvent *)theEvent {return;}
-//- (void)keyUp:(NSEvent *)theEvent {return;}
-- (void)mouseDown:(NSEvent *)theEvent {return;}
-- (void)mouseUp:(NSEvent *)theEvent {return;}
-- (void)mouseDragged:(NSEvent *)theEvent {return;}
-- (void)mouseEntered:(NSEvent *)theEvent {return;}
-- (void)mouseExited:(NSEvent *)theEvent {return;}
-- (BOOL)acceptsFirstResponder {return YES;}
-- (BOOL)resignFirstResponder {return NO;}
+- (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
+    NSLog(@"GridClock: navigation failed: %@", error);
+}
+
+- (void)webView:(WKWebView *)webView didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error {
+    NSLog(@"GridClock: provisional navigation failed: %@", error);
+}
+
+- (void)webViewWebContentProcessDidTerminate:(WKWebView *)webView {
+    NSLog(@"GridClock: web content process terminated, reloading");
+    [webView reload];
+}
+
+#pragma mark - Input passthrough
+
+- (NSView *)hitTest:(NSPoint)aPoint { return self; }
+- (void)mouseDown:(NSEvent *)event {}
+- (void)mouseUp:(NSEvent *)event {}
+- (void)mouseDragged:(NSEvent *)event {}
+- (void)mouseEntered:(NSEvent *)event {}
+- (void)mouseExited:(NSEvent *)event {}
+- (BOOL)acceptsFirstResponder { return YES; }
+- (BOOL)resignFirstResponder { return NO; }
 
 @end

@@ -24,3 +24,6 @@ xcuserdata/*
 *.xcuserstate
 project.xcworkspace/
 xcuserdata/
+
+# Local build output
+/build/
