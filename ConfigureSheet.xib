@@ -9,6 +9,7 @@
         <customObject id="-2" userLabel="File's Owner" customClass="GridClock">
             <connections>
                 <outlet property="configSheet" destination="QvC-M9-y7g" id="Neh-j4-32j"/>
+                <outlet property="brightnessSlider" destination="bg2-Sl-d01" id="bg2-Sl-o01"/>
                 <outlet property="screenDisplayOption" destination="osi-OU-YaU" id="iw1-KE-NYE"/>
             </connections>
         </customObject>
@@ -17,14 +18,14 @@
         <window allowsToolTipsWhenApplicationIsInactive="NO" autorecalculatesKeyViewLoop="NO" releasedWhenClosed="NO" visibleAtLaunch="NO" animationBehavior="default" id="QvC-M9-y7g" userLabel="Panel" customClass="NSPanel">
             <windowStyleMask key="styleMask" titled="YES" closable="YES"/>
             <windowPositionMask key="initialPositionMask" leftStrut="YES" rightStrut="YES" topStrut="YES" bottomStrut="YES"/>
-            <rect key="contentRect" x="196" y="240" width="320" height="102"/>
+            <rect key="contentRect" x="196" y="240" width="320" height="140"/>
             <rect key="screenRect" x="0.0" y="0.0" width="2560" height="1418"/>
             <view key="contentView" wantsLayer="YES" id="EiT-Mj-1SZ">
-                <rect key="frame" x="0.0" y="0.0" width="320" height="102"/>
+                <rect key="frame" x="0.0" y="0.0" width="320" height="140"/>
                 <autoresizingMask key="autoresizingMask"/>
                 <subviews>
                     <textField horizontalHuggingPriority="251" verticalHuggingPriority="750" fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="a1k-tn-KC1">
-                        <rect key="frame" x="20" y="64" width="60" height="17"/>
+                        <rect key="frame" x="20" y="102" width="78" height="17"/>
                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                         <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" sendsActionOnEndEditing="YES" title="Show on:" id="jOB-rY-MKy">
                             <font key="font" metaFont="system"/>
@@ -33,7 +34,7 @@
                         </textFieldCell>
                     </textField>
                     <popUpButton verticalHuggingPriority="750" fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="osi-OU-YaU">
-                        <rect key="frame" x="84" y="58" width="219" height="26"/>
+                        <rect key="frame" x="102" y="96" width="201" height="26"/>
                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
                         <popUpButtonCell key="cell" type="push" title="Primary Display" bezelStyle="rounded" alignment="left" lineBreakMode="truncatingTail" state="on" borderStyle="borderAndBezel" imageScaling="proportionallyDown" inset="2" selectedItem="z3J-9s-f75" id="oq1-VZ-McK">
                             <behavior key="behavior" lightByBackground="YES" lightByGray="YES"/>
@@ -47,6 +48,23 @@
                             </menu>
                         </popUpButtonCell>
                     </popUpButton>
+                    <textField horizontalHuggingPriority="251" verticalHuggingPriority="750" fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="bg1-La-b01">
+                        <rect key="frame" x="20" y="63" width="78" height="17"/>
+                        <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
+                        <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" sendsActionOnEndEditing="YES" title="Brightness:" id="bg1-La-c01">
+                            <font key="font" metaFont="system"/>
+                            <color key="textColor" name="labelColor" catalog="System" colorSpace="catalog"/>
+                            <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
+                        </textFieldCell>
+                    </textField>
+                    <slider verticalHuggingPriority="750" fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="bg2-Sl-d01">
+                        <rect key="frame" x="102" y="62" width="201" height="21"/>
+                        <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>
+                        <sliderCell key="cell" continuous="YES" state="on" alignment="left" minValue="5" maxValue="100" doubleValue="100" tickMarkPosition="above" sliderType="linear" id="bg2-Sl-c01"/>
+                        <connections>
+                            <action selector="brightnessChanged:" target="-2" id="bg2-Sl-a01"/>
+                        </connections>
+                    </slider>
                     <button verticalHuggingPriority="750" fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="1Od-P9-lod">
                         <rect key="frame" x="225" y="13" width="81" height="32"/>
                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMinY="YES"/>

@@ -2,6 +2,10 @@
 
 static NSString * const kModuleName = @"com.chrstphrknwtn.grid-clock";
 static NSString * const kScreenDisplayOptionKey = @"screenDisplayOption";
+static NSString * const kBrightnessKey = @"brightness";
+
+static const NSInteger kMinBrightness = 5;
+static const NSInteger kMaxBrightness = 100;
 
 typedef NS_ENUM(NSInteger, GridClockScreenDisplayOption) {
     GridClockScreenDisplayPrimary = 0,
@@ -11,6 +15,7 @@ typedef NS_ENUM(NSInteger, GridClockScreenDisplayOption) {
 
 @interface GridClock ()
 @property (nonatomic, strong) WKWebView *webView;
+@property (nonatomic, assign) NSInteger brightnessBeforeEditing;
 @end
 
 @implementation GridClock
@@ -23,7 +28,8 @@ typedef NS_ENUM(NSInteger, GridClockScreenDisplayOption) {
     if (!(self = [super initWithFrame:frame isPreview:isPreview])) return nil;
 
     [[GridClock defaults] registerDefaults:@{
-        kScreenDisplayOptionKey: @(GridClockScreenDisplayPrimary)
+        kScreenDisplayOptionKey: @(GridClockScreenDisplayPrimary),
+        kBrightnessKey: @(kMaxBrightness)
     }];
 
     // Black backing avoids a white flash before index.html paints.
@@ -77,6 +83,8 @@ typedef NS_ENUM(NSInteger, GridClockScreenDisplayOption) {
 - (BOOL)shouldDisplayOnCurrentScreen {
     if (self.isPreview) return YES;
 
+    // nil means the host put this window off-screen entirely (see readme, multi-display
+    // note); nothing is visible either way, so do not also hide the content.
     NSScreen *screen = self.window.screen;
     if (!screen) return YES;
 
@@ -90,6 +98,16 @@ typedef NS_ENUM(NSInteger, GridClockScreenDisplayOption) {
         default:
             return YES;
     }
+}
+
+#pragma mark - Brightness
+
+- (void)applyBrightness:(NSInteger)percent {
+    percent = MAX(kMinBrightness, MIN(kMaxBrightness, percent));
+    NSString *script = [NSString stringWithFormat:
+                        @"document.documentElement.style.setProperty('--brightness', '%.2f')",
+                        percent / (double)kMaxBrightness];
+    [self.webView evaluateJavaScript:script completionHandler:nil];
 }
 
 #pragma mark - ScreenSaverView
@@ -112,18 +130,29 @@ typedef NS_ENUM(NSInteger, GridClockScreenDisplayOption) {
         }
     }
 
-    [self.screenDisplayOption selectItemAtIndex:[[GridClock defaults] integerForKey:kScreenDisplayOptionKey]];
+    ScreenSaverDefaults *defaults = [GridClock defaults];
+    [self.screenDisplayOption selectItemAtIndex:[defaults integerForKey:kScreenDisplayOptionKey]];
+
+    self.brightnessBeforeEditing = [defaults integerForKey:kBrightnessKey];
+    self.brightnessSlider.integerValue = self.brightnessBeforeEditing;
 
     return _configSheet;
 }
 
+// Continuous, so the preview dims while the slider is dragged.
+- (IBAction)brightnessChanged:(id)sender {
+    [self applyBrightness:self.brightnessSlider.integerValue];
+}
+
 - (IBAction)cancelClick:(id)sender {
+    [self applyBrightness:self.brightnessBeforeEditing];
     [self closeConfigureSheet];
 }
 
 - (IBAction)okClick:(id)sender {
     ScreenSaverDefaults *defaults = [GridClock defaults];
     [defaults setInteger:self.screenDisplayOption.indexOfSelectedItem forKey:kScreenDisplayOptionKey];
+    [defaults setInteger:self.brightnessSlider.integerValue forKey:kBrightnessKey];
     [defaults synchronize];
 
     self.webView.hidden = !self.shouldDisplayOnCurrentScreen;
@@ -141,6 +170,10 @@ typedef NS_ENUM(NSInteger, GridClockScreenDisplayOption) {
 }
 
 #pragma mark - WKNavigationDelegate
+
+- (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
+    [self applyBrightness:[[GridClock defaults] integerForKey:kBrightnessKey]];
+}
 
 - (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
     NSLog(@"GridClock: navigation failed: %@", error);

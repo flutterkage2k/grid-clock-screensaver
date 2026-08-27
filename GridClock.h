@@ -5,5 +5,6 @@
 
 @property (nonatomic, strong) IBOutlet NSWindow *configSheet;
 @property (nonatomic, weak) IBOutlet NSPopUpButton *screenDisplayOption;
+@property (nonatomic, weak) IBOutlet NSSlider *brightnessSlider;
 
 @end

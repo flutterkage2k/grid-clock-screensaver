@@ -20,6 +20,8 @@ clock {
   height: 92vw;
   max-width: 92vh;
   max-height: 92vh;
+  /* --brightness is set from the screen saver's Options sheet. */
+  opacity: var(--brightness, 1);
 }
 
 glyph {
