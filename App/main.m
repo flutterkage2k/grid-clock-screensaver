@@ -9,6 +9,7 @@
 
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
+#import <os/log.h>
 
 static NSString * const kBrightnessKey = @"brightness";
 static const NSInteger kMinBrightness = 5;
@@ -32,6 +33,8 @@ static const NSInteger kBrightnessStep = 5;
 @property (nonatomic, strong) NSMutableArray<NSWindow *> *windows;
 @property (nonatomic, strong) NSMutableArray<WKWebView *> *webViews;
 @property (nonatomic, strong) id displayAwakeActivity;
+@property (nonatomic, strong) NSTimer *tick;
+@property (nonatomic, assign) NSInteger lastLoggedMinute;
 @property (nonatomic, strong) id keyMonitor;
 @end
 
@@ -95,12 +98,31 @@ static const NSInteger kBrightnessStep = 5;
                                                name:NSApplicationDidChangeScreenParametersNotification
                                              object:nil];
 
+    __weak typeof(self) weakSelf = self;
+
     self.displayAwakeActivity =
         [NSProcessInfo.processInfo beginActivityWithOptions:NSActivityIdleDisplaySleepDisabled |
                                                             NSActivityUserInitiated
                                                      reason:@"Showing the clock"];
 
-    __weak typeof(self) weakSelf = self;
+    // index.js keeps its own setInterval, but WebKit naps the web content process once
+    // the app is not frontmost, which stops that timer and leaves the last frame frozen
+    // on screen. Driving updateClock() from here instead keeps the page ticking, because
+    // the call itself wakes the process.
+    self.tick = [NSTimer scheduledTimerWithTimeInterval:1.0
+                                                repeats:YES
+                                                  block:^(NSTimer *timer) { [weakSelf tickClock]; }];
+    self.tick.tolerance = 0.2;
+    [NSRunLoop.mainRunLoop addTimer:self.tick forMode:NSRunLoopCommonModes];
+
+    // Waking from sleep can land on a frame drawn before the machine went down.
+    for (NSString *name in @[NSWorkspaceDidWakeNotification, NSWorkspaceScreensDidWakeNotification]) {
+        [NSWorkspace.sharedWorkspace.notificationCenter addObserver:self
+                                                          selector:@selector(tickClock)
+                                                              name:name
+                                                            object:nil];
+    }
+
     self.keyMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown
                                                             handler:^NSEvent *(NSEvent *event) {
         return [weakSelf handleKeyDown:event] ? nil : event;
@@ -108,6 +130,40 @@ static const NSInteger kBrightnessStep = 5;
 
     [NSApp activateIgnoringOtherApps:YES];
     [NSCursor setHiddenUntilMouseMoves:YES];
+}
+
+- (void)tickClock {
+    for (WKWebView *webView in self.webViews) {
+        [webView evaluateJavaScript:@"typeof updateClock === 'function' && updateClock()"
+                  completionHandler:nil];
+    }
+    [self logPhraseOncePerMinute];
+}
+
+// Diagnostic for a report of the clock reading ten minutes behind the system, which has
+// not reproduced. Recording what the page actually says, once a minute, separates a page
+// that computed the wrong time from a correct page whose last frame is stuck on screen:
+//
+//   log show --last 12h --predicate 'eventMessage CONTAINS "GridClock phrase"' --info
+- (void)logPhraseOncePerMinute {
+    NSDateComponents *now = [NSCalendar.currentCalendar componentsInTimeZone:NSTimeZone.localTimeZone
+                                                                    fromDate:NSDate.date];
+    if (now.minute == self.lastLoggedMinute) return;
+    self.lastLoggedMinute = now.minute;
+
+    WKWebView *webView = self.webViews.firstObject;
+    if (!webView) return;
+
+    NSString *read =
+        @"Array.prototype.slice.call(document.querySelectorAll('glyph'))"
+         ".filter(function(g){return g.closest('.on')})"
+         ".map(function(g){return g.textContent}).join('')";
+    NSInteger hour = now.hour, minute = now.minute;
+    [webView evaluateJavaScript:read completionHandler:^(id phrase, NSError *error) {
+        os_log(OS_LOG_DEFAULT, "GridClock phrase %{public}02ld:%{public}02ld %{public}s",
+               (long)hour, (long)minute,
+               [([phrase isKindOfClass:NSString.class] ? phrase : @"<none>") UTF8String]);
+    }];
 }
 
 - (void)buildWindows {
@@ -182,6 +238,8 @@ static const NSInteger kBrightnessStep = 5;
 }
 
 - (void)applicationWillTerminate:(NSNotification *)note {
+    [self.tick invalidate];
+    [NSWorkspace.sharedWorkspace.notificationCenter removeObserver:self];
     if (self.displayAwakeActivity) [NSProcessInfo.processInfo endActivity:self.displayAwakeActivity];
     if (self.keyMonitor) [NSEvent removeMonitor:self.keyMonitor];
     [NSCursor unhide];
