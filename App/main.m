@@ -6,6 +6,7 @@
 //
 //   esc / cmd-Q  quit
 //   up / down    brightness
+//   t            show the system time, drawn natively, to check the grid against
 
 #import <Cocoa/Cocoa.h>
 #import <WebKit/WebKit.h>
@@ -35,6 +36,8 @@ static const NSInteger kBrightnessStep = 5;
 @property (nonatomic, strong) id displayAwakeActivity;
 @property (nonatomic, strong) NSTimer *tick;
 @property (nonatomic, assign) NSInteger lastLoggedMinute;
+@property (nonatomic, strong) NSMutableArray<NSTextField *> *timeLabels;
+@property (nonatomic, assign) BOOL showsTime;
 @property (nonatomic, strong) id keyMonitor;
 @end
 
@@ -90,6 +93,7 @@ static const NSInteger kBrightnessStep = 5;
 - (void)applicationDidFinishLaunching:(NSNotification *)note {
     self.windows = [NSMutableArray array];
     self.webViews = [NSMutableArray array];
+    self.timeLabels = [NSMutableArray array];
 
     [self buildWindows];
 
@@ -132,12 +136,31 @@ static const NSInteger kBrightnessStep = 5;
     [NSCursor setHiddenUntilMouseMoves:YES];
 }
 
+// The page no longer reads its own clock: the time is pushed in from here every second,
+// so what the grid spells is whatever this process read from NSDate.
 - (void)tickClock {
+    NSDate *now = NSDate.date;
+    NSString *script = [NSString stringWithFormat:
+                        @"window.clockNow = %.0f; typeof updateClock === 'function' && updateClock()",
+                        now.timeIntervalSince1970 * 1000.0];
     for (WKWebView *webView in self.webViews) {
-        [webView evaluateJavaScript:@"typeof updateClock === 'function' && updateClock()"
-                  completionHandler:nil];
+        [webView evaluateJavaScript:script completionHandler:nil];
     }
+
+    NSDateComponents *parts = [NSCalendar.currentCalendar componentsInTimeZone:NSTimeZone.localTimeZone
+                                                                      fromDate:now];
+    NSString *reading = [NSString stringWithFormat:@"%02ld:%02ld:%02ld",
+                         (long)parts.hour, (long)parts.minute, (long)parts.second];
+    for (NSTextField *label in self.timeLabels) label.stringValue = reading;
+
     [self logPhraseOncePerMinute];
+}
+
+// Drawn by AppKit rather than the page, so it keeps running even if the web view stalls.
+// If this and the grid ever disagree, the grid is stale.
+- (void)toggleTime {
+    self.showsTime = !self.showsTime;
+    for (NSTextField *label in self.timeLabels) label.hidden = !self.showsTime;
 }
 
 // Diagnostic for a report of the clock reading ten minutes behind the system, which has
@@ -170,6 +193,7 @@ static const NSInteger kBrightnessStep = 5;
     for (NSWindow *window in self.windows) [window close];
     [self.windows removeAllObjects];
     [self.webViews removeAllObjects];
+    [self.timeLabels removeAllObjects];
 
     NSURL *indexURL = [NSBundle.mainBundle URLForResource:@"index"
                                             withExtension:@"html"
@@ -193,12 +217,30 @@ static const NSInteger kBrightnessStep = 5;
         if (@available(macOS 12.0, *)) webView.underPageBackgroundColor = NSColor.blackColor;
         [webView loadFileURL:indexURL allowingReadAccessToURL:indexURL.URLByDeletingLastPathComponent];
 
+        NSView *container = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, NSWidth(frame), NSHeight(frame))];
+        container.autoresizesSubviews = YES;
+        [container addSubview:webView];
+
+        // The page draws the grid at 92% of the shorter side, so this sits in the margin
+        // below it rather than over the bottom row.
+        CGFloat labelHeight = NSHeight(frame) * 0.028;
+        NSTextField *timeLabel = [NSTextField labelWithString:@""];
+        timeLabel.frame = NSMakeRect(0, NSHeight(frame) * 0.008, NSWidth(frame), labelHeight);
+        timeLabel.alignment = NSTextAlignmentCenter;
+        timeLabel.font = [NSFont monospacedDigitSystemFontOfSize:labelHeight * 0.7
+                                                          weight:NSFontWeightLight];
+        timeLabel.textColor = [NSColor colorWithWhite:1 alpha:0.55];
+        timeLabel.autoresizingMask = NSViewWidthSizable | NSViewMaxYMargin;
+        timeLabel.hidden = !self.showsTime;
+        [container addSubview:timeLabel];
+        [self.timeLabels addObject:timeLabel];
+
         ClockWindow *window = [[ClockWindow alloc] initWithContentRect:frame
                                                             styleMask:NSWindowStyleMaskBorderless
                                                               backing:NSBackingStoreBuffered
                                                                 defer:NO
                                                                screen:screen];
-        window.contentView = webView;
+        window.contentView = container;
         window.backgroundColor = NSColor.blackColor;
         window.opaque = YES;
         window.level = NSScreenSaverWindowLevel;
@@ -232,6 +274,9 @@ static const NSInteger kBrightnessStep = 5;
             [self setBrightness:self.brightness - kBrightnessStep];
             [self showHint:[NSString stringWithFormat:@"Brightness %ld%%", (long)self.brightness]];
             return YES;
+        case 17: // t
+            [self toggleTime];
+            return YES;
         default:
             return NO;
     }
@@ -251,7 +296,7 @@ static const NSInteger kBrightnessStep = 5;
 
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
     [self applyBrightnessTo:webView];
-    [self showHint:@"esc to quit  ·  ↑ ↓ brightness"];
+    [self showHint:@"esc to quit  ·  ↑ ↓ brightness  ·  t for the time"];
 }
 
 - (void)webView:(WKWebView *)webView didFailProvisionalNavigation:(WKNavigation *)navigation withError:(NSError *)error {

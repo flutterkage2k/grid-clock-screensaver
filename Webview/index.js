@@ -59,7 +59,9 @@ function clearClock() {
 /** Main / Update Clock
 ----------------------------------------------------------------------------- */
 function updateClock() {
-	const date = new Date();
+	// The app sets window.clockNow so the native side owns the time. Left unset - in the
+	// screen saver, or when the page is opened on its own - this is the system clock.
+	const date = new Date(window.clockNow || Date.now());
 	let hour = date.getHours();
 	const minutes = date.getMinutes();
 

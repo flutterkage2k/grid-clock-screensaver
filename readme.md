@@ -17,6 +17,10 @@ open "build/Grid Clock.app"
 | --- | --- |
 | `esc` or `cmd-Q` | quit |
 | `up` / `down` | brightness, 5-100% in steps of 5, remembered between launches |
+| `t` | show the system time under the grid, drawn by AppKit rather than the page - if it disagrees with the words, the grid is stale |
+
+The time comes from the app, not from the page: `NSDate` is pushed into
+`window.clockNow` every second and the page only decides which letters to light.
 
 The icon is the clock rendering itself, frozen at ten past ten - `App/make_icon.m`
 regenerates `App/AppIcon.png` from the same page the app displays.
